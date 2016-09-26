@@ -109,7 +109,6 @@ JSCExecutor::JSCExecutor(std::shared_ptr<ExecutorDelegate> delegate,
 
   {
     SystraceSection s("collectNativeModuleNames");
-    std::vector<std::string> names = delegate->moduleNames();
     for (auto& name : delegate->moduleNames()) {
       nativeModuleConfig.push_back(folly::dynamic::array(std::move(name)));
     }
@@ -124,9 +123,6 @@ JSCExecutor::JSCExecutor(std::shared_ptr<ExecutorDelegate> delegate,
   setGlobalVariable(
     "__fbBatchedBridgeConfig",
     folly::make_unique<JSBigStdString>(detail::toStdString(folly::toJson(config))));
-  setGlobalVariable(
-    "__fbBatchedBridgeSerializeNativeParams",
-    folly::make_unique<JSBigStdString>(""));
 }
 
 JSCExecutor::JSCExecutor(
@@ -349,7 +345,7 @@ void JSCExecutor::callNativeModules(Value&& value) {
   SystraceSection s("JSCExecutor::callNativeModules");
   try {
     auto calls = value.toJSONString();
-    m_delegate->callNativeModules(*this, std::move(calls), true);
+    m_delegate->callNativeModules(*this, folly::parseJson(calls), true);
   } catch (...) {
     std::string message = "Error in callNativeModules()";
     try {
@@ -471,8 +467,9 @@ void JSCExecutor::handleMemoryPressureCritical() {
   #endif
 }
 
-void JSCExecutor::flushQueueImmediate(std::string queueJSON) {
-  m_delegate->callNativeModules(*this, std::move(queueJSON), false);
+void JSCExecutor::flushQueueImmediate(Value&& queue) {
+  auto queueStr = queue.toJSONString();
+  m_delegate->callNativeModules(*this, folly::parseJson(queueStr), false);
 }
 
 void JSCExecutor::loadModule(uint32_t moduleId) {
@@ -649,8 +646,7 @@ JSValueRef JSCExecutor::nativeFlushQueueImmediate(
     throw std::invalid_argument("Got wrong number of args");
   }
 
-  std::string resStr = Value(m_context, arguments[0]).toJSONString();
-  flushQueueImmediate(std::move(resStr));
+  flushQueueImmediate(Value(m_context, arguments[0]));
   return JSValueMakeUndefined(m_context);
 }
 
